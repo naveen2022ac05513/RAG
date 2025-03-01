@@ -1,7 +1,4 @@
-import os
 import pandas as pd
-from collections import Counter
-from math import log, sqrt
 import numpy as np
 import streamlit as st
 
@@ -12,8 +9,9 @@ def preprocess(data):
     data.dropna(inplace=True)
     return data
 
-# Provide the correct file path to your CSV file
-financial_data = preprocess(pd.read_csv('C:/Users/USER/Documents/Assignment 2 RAG/Financial Statements.csv'))
+# Provide the URL to your CSV file in the GitHub repository
+url = 'https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_REPOSITORY_NAME/main/Financial%20Statements.csv'
+financial_data = preprocess(pd.read_csv(url))
 
 # Combine relevant columns into text chunks for embedding
 financial_data['text_chunk'] = financial_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1)

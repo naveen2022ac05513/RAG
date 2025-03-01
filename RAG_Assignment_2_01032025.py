@@ -11,7 +11,16 @@ def preprocess(data):
 
 # Provide the URL to your CSV file in the GitHub repository
 url = 'https://github.com/naveen2022ac05513/RAG/blob/main/Financial%20Statements.csv'
-financial_data = preprocess(pd.read_csv(url))
+
+# Read the CSV file with error handling
+try:
+    financial_data = pd.read_csv(url, error_bad_lines=False)
+except pd.errors.ParserError as e:
+    print("Error parsing file: ", e)
+    financial_data = pd.read_csv(url, error_bad_lines=True)
+
+# Preprocess the data
+financial_data = preprocess(financial_data)
 
 # Combine relevant columns into text chunks for embedding
 financial_data['text_chunk'] = financial_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1)

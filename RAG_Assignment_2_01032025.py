@@ -118,7 +118,23 @@ if query:
         st.write(confidence)
 
         # Option for new query
-        st.text_input("Enter another question:")
-        
+        next_query = st.text_input("Enter another question:")
+        if next_query:
+            if validate_query(next_query):
+                bm25_results = bm25_retrieve(next_query)
+                re_ranked_results = re_rank(next_query, bm25_results)
+                answer, confidence = re_ranked_results[0]
+                
+                st.write("### Answer")
+                columns = list(financial_data.columns)
+                data = answer.split(' ')
+                min_len = min(len(columns), len(data))
+                answer_with_headers = '\n'.join([f"{columns[i]}: {data[i]}" for i in range(min_len)])
+                st.write(answer_with_headers)
+                
+                st.write("### Confidence Score")
+                st.write(confidence)
+            else:
+                st.write("Invalid query. Please ask a relevant financial question.")
     else:
         st.write("Invalid query. Please ask a relevant financial question.")

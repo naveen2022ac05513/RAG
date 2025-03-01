@@ -10,7 +10,7 @@ def preprocess(data):
     return data
 
 # Provide the URL to your CSV file in the GitHub repository
-url = 'https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_REPOSITORY_NAME/main/Financial%20Statements.csv'
+url = 'https://github.com/naveen2022ac05513/RAG/blob/main/Financial%20Statements.csv'
 financial_data = preprocess(pd.read_csv(url))
 
 # Combine relevant columns into text chunks for embedding

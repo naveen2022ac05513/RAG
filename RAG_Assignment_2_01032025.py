@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
-from collections import Counter
-from math import log, sqrt
 
 # Data Collection & Preprocessing
 def preprocess(data):
@@ -23,43 +21,6 @@ except pd.errors.ParserError as e:
 # Preprocess the data
 financial_data = preprocess(financial_data)
 
-# Combine relevant columns into text chunks for embedding
-financial_data['text_chunk'] = financial_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1)
-chunks = financial_data['text_chunk'].tolist()
-
-# Basic Word Frequency Vectorizer
-def word_frequency_vectorizer(docs):
-    doc_count = len(docs)
-    word_freq = [Counter(doc.split()) for doc in docs]
-    doc_freq = Counter()
-    for word in set().union(*[doc.keys() for doc in word_freq]):
-        doc_freq[word] = sum(1 for doc in word_freq if word in doc)
-    return word_freq, doc_freq, doc_count
-
-def tf_idf_vectorizer(docs):
-    word_freq, doc_freq, doc_count = word_frequency_vectorizer(docs)
-    tf_idf = []
-    for doc in word_freq:
-        tf_idf.append({word: (freq / sum(doc.values())) * log(doc_count / doc_freq[word]) for word, freq in doc.items()})
-    return tf_idf
-
-def cosine_similarity(vec1, vec2):
-    common_words = set(vec1.keys()) & set(vec2.keys())
-    dot_product = sum(vec1[word] * vec2[word] for word in common_words)
-    magnitude1 = sqrt(sum(val**2 for val in vec1.values()))
-    magnitude2 = sqrt(sum(val**2 for val in vec2.values()))
-    if not magnitude1 or not magnitude2:
-        return 0.0
-    return dot_product / (magnitude1 * magnitude2)
-
-tf_idf_docs = tf_idf_vectorizer(chunks)
-
-def retrieve(query, top_k=5):
-    query_vec = tf_idf_vectorizer([query])[0]
-    similarity_scores = [cosine_similarity(query_vec, doc_vec) for doc_vec in tf_idf_docs]
-    top_indices = np.argsort(similarity_scores)[-top_k:][::-1]
-    return [(chunks[idx], similarity_scores[idx]) for idx in top_indices]
-
 # Guard Rail Implementation
 def validate_query(query):
     # Extract column names from the dataset
@@ -70,43 +31,45 @@ def validate_query(query):
     else:
         return False
 
+# Query Processing
+def process_query(query):
+    query_lower = query.lower()
+    if "highest revenue" in query_lower:
+        result = financial_data.loc[financial_data['Revenue'].idxmax()]
+    elif "lowest revenue" in query_lower:
+        result = financial_data.loc[financial_data['Revenue'].idxmin()]
+    elif "no revenue" in query_lower:
+        result = financial_data[financial_data['Revenue'] == 0]
+    else:
+        result = None
+    return result
+
 # UI Development (Streamlit)
 st.title("Financial Q&A using RAG Model")
 
 query = st.text_input("Enter your financial question:")
 if query:
     if validate_query(query):
-        bm25_results = retrieve(query)
-        answer, confidence = bm25_results[0]
-        
-        st.write("### Answer")
-        
-        # Display the column headers along with the answer
-        columns = list(financial_data.columns)
-        data = answer.split(' ')
-        min_len = min(len(columns), len(data))
-        answer_with_headers = '\n'.join([f"{columns[i]}: {data[i]}" for i in range(min_len)])
-        st.write(answer_with_headers)
-        
-        st.write("### Confidence Score")
-        st.write(confidence)
+        result = process_query(query)
+        if result is not None and not result.empty:
+            st.write("### Answer")
+            for col, val in result.items():
+                st.write(f"{col}: {val}")
+
+        else:
+            st.write("No matching data found for your query.")
 
         # Option for new query
         next_query = st.text_input("Enter your next financial question:")
         if next_query:
             if validate_query(next_query):
-                bm25_results = retrieve(next_query)
-                answer, confidence = bm25_results[0]
-                
-                st.write("### Answer")
-                columns = list(financial_data.columns)
-                data = answer.split(' ')
-                min_len = min(len(columns), len(data))
-                answer_with_headers = '\n'.join([f"{columns[i]}: {data[i]}" for i in range(min_len)])
-                st.write(answer_with_headers)
-                
-                st.write("### Confidence Score")
-                st.write(confidence)
+                result = process_query(next_query)
+                if result is not None and not result.empty:
+                    st.write("### Answer")
+                    for col, val in result.items():
+                        st.write(f"{col}: {val}")
+                else:
+                    st.write("No matching data found for your query.")
             else:
                 st.write("Invalid query. Please ask a relevant financial question.")
     else:

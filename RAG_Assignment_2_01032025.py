@@ -8,7 +8,6 @@ from math import log, sqrt
 def preprocess(data):
     data.replace('null', None, inplace=True)
     data.fillna("None", inplace=True)
-    data.dropna(inplace=True)
     return data
 
 # Provide the URL to your CSV file in the GitHub repository
@@ -61,30 +60,6 @@ def retrieve(query, top_k=5):
     top_indices = np.argsort(similarity_scores)[-top_k:][::-1]
     return [(chunks[idx], similarity_scores[idx]) for idx in top_indices]
 
-# Advanced RAG Implementation using BM25
-def bm25_score(query, doc, k=1.5, b=0.75):
-    words = query.split()
-    query_freq = Counter(words)
-    avg_doc_len = sum(len(doc.split()) for doc in chunks) / len(chunks)
-    score = 0
-    for word in words:
-        if word in doc:
-            term_freq = doc.split().count(word)
-            doc_len = len(doc.split())
-            score += (query_freq[word] * (k + 1) * term_freq) / (term_freq + k * (1 - b + b * (doc_len / avg_doc_len)))
-    return score
-
-def bm25_retrieve(query, top_k=5):
-    scores = [bm25_score(query, doc) for doc in chunks]
-    top_indices = np.argsort(scores)[-top_k:][::-1]
-    return [(chunks[idx], scores[idx]) for idx in top_indices]
-
-def re_rank(query, candidates):
-    query_vec = tf_idf_vectorizer([query])[0]
-    scores = [(doc, cosine_similarity(query_vec, tf_idf_vectorizer([doc])[0])) for doc, _ in candidates]
-    ranked_candidates = sorted(scores, key=lambda x: x[1], reverse=True)
-    return ranked_candidates
-
 # Guard Rail Implementation
 def validate_query(query):
     # Extract column names from the dataset
@@ -101,9 +76,8 @@ st.title("Financial Q&A using RAG Model")
 query = st.text_input("Enter your financial question:")
 if query:
     if validate_query(query):
-        bm25_results = bm25_retrieve(query)
-        re_ranked_results = re_rank(query, bm25_results)
-        answer, confidence = re_ranked_results[0]
+        bm25_results = retrieve(query)
+        answer, confidence = bm25_results[0]
         
         st.write("### Answer")
         
@@ -121,9 +95,8 @@ if query:
         next_query = st.text_input("Enter your next financial question:")
         if next_query:
             if validate_query(next_query):
-                bm25_results = bm25_retrieve(next_query)
-                re_ranked_results = re_rank(next_query, bm25_results)
-                answer, confidence = re_ranked_results[0]
+                bm25_results = retrieve(next_query)
+                answer, confidence = bm25_results[0]
                 
                 st.write("### Answer")
                 columns = list(financial_data.columns)

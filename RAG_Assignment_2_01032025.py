@@ -87,7 +87,8 @@ def re_rank(query, candidates):
 
 # Guard Rail Implementation
 def validate_query(query):
-    allowed_keywords = ['revenue', 'profit', 'expenses', 'assets', 'liabilities']
+    # Extract column names from the dataset
+    allowed_keywords = list(financial_data.columns)
     if any(keyword in query.lower() for keyword in allowed_keywords):
         return True
     else:
@@ -104,7 +105,18 @@ if query:
         answer, confidence = re_ranked_results[0]
         
         st.write("### Answer")
-        st.write(answer)
+        
+        # Display the column headers along with the answer
+        columns = list(financial_data.columns)
+        data = answer.split(' ')
+        answer_with_headers = '\n'.join([f"{columns[i]}: {data[i]}" for i in range(len(columns))])
+        st.write(answer_with_headers)
+        
         st.write("### Confidence Score")
+        st.write(confidence)
+
+        # Option for new query
+        st.text_input("Enter another question:")
+        
     else:
         st.write("Invalid query. Please ask a relevant financial question.")

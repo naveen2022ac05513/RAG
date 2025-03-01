@@ -118,7 +118,7 @@ if query:
         st.write(confidence)
 
         # Option for new query
-        next_query = st.text_input("Enter another question:")
+        next_query = st.text_input("Enter your next financial question:")
         if next_query:
             if validate_query(next_query):
                 bm25_results = bm25_retrieve(next_query)

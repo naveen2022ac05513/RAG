@@ -1,15 +1,9 @@
-pip install sentence-transformers
 import os
 import pandas as pd
-from sentence_transformers import SentenceTransformer, util
-import numpy as np
-import faiss
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
-from sentence_transformers import CrossEncoder
 import streamlit as st
-
-# Disable symlink warning
-os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
 
 # Data Collection & Preprocessing
 def preprocess(data):
@@ -25,21 +19,18 @@ financial_data = preprocess(pd.read_csv('C:/Users/USER/Documents/Assignment 2 RA
 financial_data['text_chunk'] = financial_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1)
 chunks = financial_data['text_chunk'].tolist()
 
-# Basic RAG Implementation
-model = SentenceTransformer('all-MiniLM-L6-v2')
-embeddings = model.encode(chunks, convert_to_tensor=True)
-
-index = faiss.IndexFlatL2(embeddings.shape[1])
-index.add(np.array(embeddings.cpu()))
+# TF-IDF Vectorization
+vectorizer = TfidfVectorizer()
+tfidf_matrix = vectorizer.fit_transform(chunks)
 
 def retrieve(query, top_k=5):
-    query_embedding = model.encode(query, convert_to_tensor=True)
-    distances, indices = index.search(np.array(query_embedding.cpu()).reshape(1, -1), top_k)
-    return [(chunks[idx], distances[0][i]) for i, idx in enumerate(indices[0])]
+    query_vec = vectorizer.transform([query])
+    similarity_scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
+    top_indices = similarity_scores.argsort()[-top_k:][::-1]
+    return [(chunks[idx], similarity_scores[idx]) for idx in top_indices]
 
 # Advanced RAG Implementation
 bm25 = BM25Okapi([chunk.split() for chunk in chunks])
-cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
 def bm25_retrieve(query, top_k=5):
     tokenized_query = query.split()
@@ -48,8 +39,9 @@ def bm25_retrieve(query, top_k=5):
     return [(chunks[idx], scores[idx]) for idx in top_indices]
 
 def re_rank(query, candidates):
-    inputs = [[query, candidate] for candidate, _ in candidates]
-    scores = cross_encoder.predict(inputs)
+    query_vec = vectorizer.transform([query])
+    inputs = [vectorizer.transform([candidate]) for candidate, _ in candidates]
+    scores = [cosine_similarity(query_vec, candidate_vec).flatten()[0] for candidate_vec in inputs]
     ranked_candidates = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
     return ranked_candidates
 

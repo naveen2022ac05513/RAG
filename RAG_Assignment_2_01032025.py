@@ -110,7 +110,8 @@ if query:
         # Display the column headers along with the answer
         columns = list(financial_data.columns)
         data = answer.split(' ')
-        answer_with_headers = '\n'.join([f"{columns[i]}: {data[i]}" for i in range(len(columns))])
+        min_len = min(len(columns), len(data))
+        answer_with_headers = '\n'.join([f"{columns[i]}: {data[i]}" for i in range(min_len)])
         st.write(answer_with_headers)
         
         st.write("### Confidence Score")

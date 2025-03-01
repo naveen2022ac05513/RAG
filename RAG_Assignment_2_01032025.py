@@ -89,6 +89,7 @@ def re_rank(query, candidates):
 def validate_query(query):
     # Extract column names from the dataset
     allowed_keywords = list(financial_data.columns)
+    # Check if any of the keywords is in the query
     if any(keyword.lower() in query.lower() for keyword in allowed_keywords):
         return True
     else:

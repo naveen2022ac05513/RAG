@@ -1,8 +1,8 @@
 import os
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from rank_bm25 import BM25Okapi
+from collections import Counter
+from math import log, sqrt
+import numpy as np
 import streamlit as st
 
 # Data Collection & Preprocessing
@@ -19,30 +19,61 @@ financial_data = preprocess(pd.read_csv('C:/Users/USER/Documents/Assignment 2 RA
 financial_data['text_chunk'] = financial_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1)
 chunks = financial_data['text_chunk'].tolist()
 
-# TF-IDF Vectorization
-vectorizer = TfidfVectorizer()
-tfidf_matrix = vectorizer.fit_transform(chunks)
+# Basic Word Frequency Vectorizer
+def word_frequency_vectorizer(docs):
+    doc_count = len(docs)
+    word_freq = [Counter(doc.split()) for doc in docs]
+    doc_freq = Counter()
+    for word in set().union(*[doc.keys() for doc in word_freq]):
+        doc_freq[word] = sum(1 for doc in word_freq if word in doc)
+    return word_freq, doc_freq, doc_count
+
+def tf_idf_vectorizer(docs):
+    word_freq, doc_freq, doc_count = word_frequency_vectorizer(docs)
+    tf_idf = []
+    for doc in word_freq:
+        tf_idf.append({word: (freq / sum(doc.values())) * log(doc_count / doc_freq[word]) for word, freq in doc.items()})
+    return tf_idf
+
+def cosine_similarity(vec1, vec2):
+    common_words = set(vec1.keys()) & set(vec2.keys())
+    dot_product = sum(vec1[word] * vec2[word] for word in common_words)
+    magnitude1 = sqrt(sum(val**2 for val in vec1.values()))
+    magnitude2 = sqrt(sum(val**2 for val in vec2.values()))
+    if not magnitude1 or not magnitude2:
+        return 0.0
+    return dot_product / (magnitude1 * magnitude2)
+
+tf_idf_docs = tf_idf_vectorizer(chunks)
 
 def retrieve(query, top_k=5):
-    query_vec = vectorizer.transform([query])
-    similarity_scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
-    top_indices = similarity_scores.argsort()[-top_k:][::-1]
+    query_vec = tf_idf_vectorizer([query])[0]
+    similarity_scores = [cosine_similarity(query_vec, doc_vec) for doc_vec in tf_idf_docs]
+    top_indices = np.argsort(similarity_scores)[-top_k:][::-1]
     return [(chunks[idx], similarity_scores[idx]) for idx in top_indices]
 
-# Advanced RAG Implementation
-bm25 = BM25Okapi([chunk.split() for chunk in chunks])
+# Advanced RAG Implementation using BM25
+def bm25_score(query, doc, k=1.5, b=0.75):
+    words = query.split()
+    query_freq = Counter(words)
+    avg_doc_len = sum(len(doc.split()) for doc in chunks) / len(chunks)
+    score = 0
+    for word in words:
+        if word in doc:
+            term_freq = doc.split().count(word)
+            doc_len = len(doc.split())
+            score += (query_freq[word] * (k + 1) * term_freq) / (term_freq + k * (1 - b + b * (doc_len / avg_doc_len)))
+    return score
 
 def bm25_retrieve(query, top_k=5):
-    tokenized_query = query.split()
-    scores = bm25.get_scores(tokenized_query)
-    top_indices = np.argsort(scores)[::-1][:top_k]
+    scores = [bm25_score(query, doc) for doc in chunks]
+    top_indices = np.argsort(scores)[-top_k:][::-1]
     return [(chunks[idx], scores[idx]) for idx in top_indices]
 
 def re_rank(query, candidates):
-    query_vec = vectorizer.transform([query])
-    inputs = [vectorizer.transform([candidate]) for candidate, _ in candidates]
-    scores = [cosine_similarity(query_vec, candidate_vec).flatten()[0] for candidate_vec in inputs]
-    ranked_candidates = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
+    query_vec = tf_idf_vectorizer([query])[0]
+    scores = [(doc, cosine_similarity(query_vec, tf_idf_vectorizer([doc])[0])) for doc, _ in candidates]
+    ranked_candidates = sorted(scores, key=lambda x: x[1], reverse=True)
     return ranked_candidates
 
 # Guard Rail Implementation

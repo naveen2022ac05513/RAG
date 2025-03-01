@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+from collections import Counter
+from math import log, sqrt
 
 # Data Collection & Preprocessing
 def preprocess(data):
@@ -10,14 +12,14 @@ def preprocess(data):
     return data
 
 # Provide the URL to your CSV file in the GitHub repository
-url = 'https://github.com/naveen2022ac05513/RAG/blob/main/Financial%20Statements.csv'
+url = 'https://raw.githubusercontent.com/naveen2022ac05513/RAG/main/Financial%20Statements.csv'
 
 # Read the CSV file with error handling
 try:
-    financial_data = pd.read_csv(url, error_bad_lines=False)
+    financial_data = pd.read_csv(url, on_bad_lines='skip')
 except pd.errors.ParserError as e:
     print("Error parsing file: ", e)
-    financial_data = pd.read_csv(url, error_bad_lines=True)
+    financial_data = pd.read_csv(url, on_bad_lines='skip')
 
 # Preprocess the data
 financial_data = preprocess(financial_data)

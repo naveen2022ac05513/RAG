@@ -1,3 +1,4 @@
+pip install sentence-transformers
 import os
 import pandas as pd
 from sentence_transformers import SentenceTransformer, util

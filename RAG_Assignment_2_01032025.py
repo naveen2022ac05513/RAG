@@ -31,6 +31,15 @@ def validate_query(query):
     else:
         return False
 
+# Calculate Confidence Score
+def calculate_confidence(query, result):
+    if "highest revenue" in query.lower() or "lowest revenue" in query.lower():
+        return 1.0  # High confidence for specific queries
+    elif result.empty:
+        return 0.0  # No matching data
+    else:
+        return min(1.0, max(0.1, len(result) / len(financial_data)))
+
 # Query Processing
 def process_query(query):
     query_lower = query.lower()
@@ -51,25 +60,30 @@ query = st.text_input("Enter your financial question:")
 if query:
     if validate_query(query):
         result = process_query(query)
+        confidence = calculate_confidence(query, result)
         if result is not None and not result.empty:
             st.write("### Answer")
             for col, val in result.items():
                 st.write(f"{col}: {val}")
-
+            st.write(f"**Confidence Score:** {confidence:.2f}")
         else:
             st.write("No matching data found for your query.")
+            st.write(f"**Confidence Score:** {confidence:.2f}")
 
         # Option for new query
         next_query = st.text_input("Enter your next financial question:")
         if next_query:
             if validate_query(next_query):
                 result = process_query(next_query)
+                confidence = calculate_confidence(next_query, result)
                 if result is not None and not result.empty:
                     st.write("### Answer")
                     for col, val in result.items():
                         st.write(f"{col}: {val}")
+                    st.write(f"**Confidence Score:** {confidence:.2f}")
                 else:
                     st.write("No matching data found for your query.")
+                    st.write(f"**Confidence Score:** {confidence:.2f}")
             else:
                 st.write("Invalid query. Please ask a relevant financial question.")
     else:

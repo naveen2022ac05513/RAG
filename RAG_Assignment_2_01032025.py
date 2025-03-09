@@ -16,7 +16,14 @@ url = 'https://raw.githubusercontent.com/naveen2022ac05513/RAG/main/Financial%20
 financial_data = pd.read_csv(url, on_bad_lines='skip')
 
 financial_data.fillna("None", inplace=True)
-financial_data['Year'] = pd.to_datetime(financial_data['Date']).dt.year  # Ensure time-based structuring
+
+# Ensure 'Year' column is numeric
+try:
+    financial_data['Year'] = pd.to_numeric(financial_data['Year'], errors='coerce')
+except KeyError:
+    st.error("Error: 'Year' column not found in dataset.")
+    st.stop()
+
 recent_data = financial_data[financial_data['Year'] >= (pd.to_datetime('today').year - 2)]
 financial_texts = recent_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1).tolist()
 

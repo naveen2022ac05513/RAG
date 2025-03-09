@@ -1,4 +1,3 @@
-!pip install pandas numpy streamlit sentence-transformers faiss-cpu rank-bm25 scikit-learn
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -6,7 +5,11 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 import faiss
 from rank_bm25 import BM25Okapi
 from sklearn.preprocessing import normalize
-import re
+import os
+import traceback
+
+# Install missing dependencies
+os.system("pip install pandas numpy streamlit sentence-transformers faiss-cpu rank-bm25 scikit-learn")
 
 # 1. Data Collection & Preprocessing
 url = 'https://raw.githubusercontent.com/naveen2022ac05513/RAG/main/Financial%20Statements.csv'
@@ -28,12 +31,16 @@ for text in financial_texts:
     chunks.extend(chunk_text(text))
 
 ## Embedding Model & Indexing
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-embeddings = embedding_model.encode(chunks, convert_to_numpy=True)
-embeddings = normalize(embeddings, axis=1, norm='l2')
+try:
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    embeddings = embedding_model.encode(chunks, convert_to_numpy=True)
+    embeddings = normalize(embeddings, axis=1, norm='l2')
 
-faiss_index = faiss.IndexFlatL2(embeddings.shape[1])
-faiss_index.add(embeddings)
+    faiss_index = faiss.IndexFlatL2(embeddings.shape[1])
+    faiss_index.add(embeddings)
+except Exception as e:
+    st.error(f"Error loading embedding model: {e}")
+    st.text(traceback.format_exc())
 
 # 3. Advanced RAG Implementation
 ## BM25 Index
@@ -41,7 +48,11 @@ tokenized_corpus = [text.split() for text in chunks]
 bm25 = BM25Okapi(tokenized_corpus)
 
 ## Cross-Encoder for Re-Ranking
-reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L6")
+try:
+    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L6")
+except Exception as e:
+    st.error(f"Error loading cross-encoder model: {e}")
+    st.text(traceback.format_exc())
 
 ## Hybrid Retrieval (BM25 + FAISS) with Re-Ranking
 def retrieve_documents(query):

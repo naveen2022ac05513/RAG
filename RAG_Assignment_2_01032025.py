@@ -1,3 +1,4 @@
+pip install pandas numpy streamlit sentence-transformers faiss-cpu rank-bm25 scikit-learn
 import pandas as pd
 import numpy as np
 import streamlit as st

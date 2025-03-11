@@ -28,8 +28,7 @@ except KeyError:
 recent_data = financial_data[financial_data['Year'] >= (pd.to_datetime('today').year - 2)]
 financial_texts = recent_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1).tolist()
 
-# 2. Basic RAG Implementation
-## Chunking Financial Documents
+# 2. Chunking Financial Documents
 def chunk_text(text, chunk_size=300):
     words = text.split()
     return [' '.join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
@@ -38,7 +37,7 @@ chunks = []
 for text in financial_texts:
     chunks.extend(chunk_text(text))
 
-## Embedding Model & Indexing
+# 3. Embedding Model & Indexing
 try:
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     embeddings = embedding_model.encode(chunks, convert_to_numpy=True)
@@ -50,19 +49,18 @@ except Exception as e:
     st.error(f"Error loading embedding model: {e}")
     st.text(traceback.format_exc())
 
-# 3. Advanced RAG Implementation
-## BM25 Index
+# 4. BM25 Index
 tokenized_corpus = [text.split() for text in chunks]
 bm25 = BM25Okapi(tokenized_corpus)
 
-## Cross-Encoder for Re-Ranking
+# 5. Cross-Encoder for Re-Ranking
 try:
-    reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # Corrected model name
+    reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     reranker = CrossEncoder(reranker_model)
 except Exception as e:
     st.error(f"Error loading cross-encoder model: {e}")
     st.text(traceback.format_exc())
-    
+
     # Attempt manual download
     try:
         snapshot_download(repo_id=reranker_model, cache_dir="./models")
@@ -71,51 +69,57 @@ except Exception as e:
         st.error(f"Failed to manually load cross-encoder model: {e}")
         st.text(traceback.format_exc())
 
-# 4. Guard Rail Implementation
+# 6. Guard Rail Implementation
 def validate_query(query):
-    # Guardrail: Ensure query is finance-related and prevent harmful inputs
+    """Ensure query is finance-related and prevent harmful inputs."""
     blacklist = ['hack', 'attack', 'delete', 'fraud']
     keywords = ['revenue', 'profit', 'loss', 'earnings', 'income', 'expenses']
     if any(b in query.lower() for b in blacklist):
         return False
     return any(kw in query.lower() for kw in keywords)
 
-# 5. Confidence Scoring
+# 7. Confidence Scoring
 def calculate_confidence(score):
-    return min(1.0, max(0.1, score / 10))  # Normalize confidence score
+    """Normalize confidence score between 0.1 and 1.0"""
+    return min(1.0, max(0.1, score / 10))
 
-## Hybrid Retrieval (BM25 + FAISS) with Re-Ranking
+# 8. Hybrid Retrieval (BM25 + FAISS) with Re-Ranking
 def retrieve_documents(query):
-    """ Hybrid retrieval using BM25 and FAISS """
+    """Retrieve the single best answer using hybrid search and cross-encoder re-ranking."""
     query_embedding = embedding_model.encode([query], convert_to_numpy=True)
     query_embedding = normalize(query_embedding, axis=1, norm='l2')
-    
+
     # BM25 Retrieval
     bm25_scores = bm25.get_scores(query.split())
     bm25_top_k = np.argsort(bm25_scores)[-5:][::-1]
-    
+
     # FAISS Retrieval
     _, faiss_top_k = faiss_index.search(query_embedding, 5)
     faiss_top_k = faiss_top_k.flatten()
-    
-    # Combine & Re-rank
+
+    # Combine unique document indices
     combined_indices = list(set(bm25_top_k) | set(faiss_top_k))
     retrieved_texts = [chunks[i] for i in combined_indices]
-    rerank_scores = reranker.predict([(query, text) for text in retrieved_texts])
-    ranked_results = sorted(zip(combined_indices, rerank_scores), key=lambda x: x[1], reverse=True)
-    
-    return [(chunks[ranked_results[0][0]], ranked_results[0][1])] if ranked_results else []
 
-# 6. UI Development (e.g., Streamlit)
+    if not retrieved_texts:
+        return None, None  # No relevant documents found
+
+    # Re-rank with cross-encoder
+    rerank_scores = reranker.predict([(query, text) for text in retrieved_texts])
+    ranked_results = sorted(zip(retrieved_texts, rerank_scores), key=lambda x: x[1], reverse=True)
+
+    return ranked_results[0]  # Return the highest-ranked result
+
+# 9. Streamlit UI Development
 st.title("Financial Q&A using Advanced RAG")
 query = st.text_input("Enter your financial question:")
+
 if query:
     if validate_query(query):
-        results = retrieve_documents(query)
-        if results:
+        best_text, best_score = retrieve_documents(query)
+        if best_text:
             st.write("### Top Answer")
-            text, score = results[0]
-            st.write(f"{text}\n**Confidence Score:** {calculate_confidence(score):.2f}")
+            st.write(f"{best_text}\n\n**Confidence Score:** {calculate_confidence(best_score):.2f}")
         else:
             st.write("No relevant information found.")
     else:

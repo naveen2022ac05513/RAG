@@ -7,9 +7,10 @@ from rank_bm25 import BM25Okapi
 from sklearn.preprocessing import normalize
 import os
 import traceback
+from huggingface_hub import snapshot_download
 
 # Install missing dependencies
-os.system("pip install pandas numpy streamlit sentence-transformers faiss-cpu rank-bm25 scikit-learn")
+os.system("pip install --upgrade sentence-transformers pandas numpy streamlit faiss-cpu rank-bm25 scikit-learn huggingface_hub")
 
 # 1. Data Collection & Preprocessing
 url = 'https://raw.githubusercontent.com/naveen2022ac05513/RAG/main/Financial%20Statements.csv'
@@ -56,10 +57,19 @@ bm25 = BM25Okapi(tokenized_corpus)
 
 ## Cross-Encoder for Re-Ranking
 try:
-    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L6")
+    reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # Corrected model name
+    reranker = CrossEncoder(reranker_model)
 except Exception as e:
     st.error(f"Error loading cross-encoder model: {e}")
     st.text(traceback.format_exc())
+    
+    # Attempt manual download
+    try:
+        snapshot_download(repo_id=reranker_model, cache_dir="./models")
+        reranker = CrossEncoder("./models/cross-encoder/ms-marco-MiniLM-L-6-v2")
+    except Exception as e:
+        st.error(f"Failed to manually load cross-encoder model: {e}")
+        st.text(traceback.format_exc())
 
 ## Hybrid Retrieval (BM25 + FAISS) with Re-Ranking
 def retrieve_documents(query):

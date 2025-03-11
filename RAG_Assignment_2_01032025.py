@@ -123,7 +123,7 @@ def calculate_confidence(score):
     return min(1.0, max(0.1, score / 10))  # Normalize confidence score
 
 ## Test Queries
-test_queries = [
+##test_queries = [
     "Which company had the highest revenue in 2023?",  # High-confidence
     "What will be next year's revenue?",  # Low-confidence
     "What is the capital of France?"  # Irrelevant question

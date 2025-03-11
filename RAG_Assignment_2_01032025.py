@@ -71,6 +71,19 @@ except Exception as e:
         st.error(f"Failed to manually load cross-encoder model: {e}")
         st.text(traceback.format_exc())
 
+# 4. Guard Rail Implementation
+def validate_query(query):
+    # Guardrail: Ensure query is finance-related and prevent harmful inputs
+    blacklist = ['hack', 'attack', 'delete', 'fraud']
+    keywords = ['revenue', 'profit', 'loss', 'earnings', 'income', 'expenses']
+    if any(b in query.lower() for b in blacklist):
+        return False
+    return any(kw in query.lower() for kw in keywords)
+
+# 5. Confidence Scoring
+def calculate_confidence(score):
+    return min(1.0, max(0.1, score / 10))  # Normalize confidence score
+
 ## Hybrid Retrieval (BM25 + FAISS) with Re-Ranking
 def retrieve_documents(query):
     """ Hybrid retrieval using BM25 and FAISS """
@@ -93,7 +106,7 @@ def retrieve_documents(query):
     
     return [(chunks[i], score) for i, score in ranked_results]
 
-# 4. UI Development (e.g., Streamlit)
+# 6. UI Development (e.g., Streamlit)
 st.title("Financial Q&A using Advanced RAG")
 query = st.text_input("Enter your financial question:")
 if query:
@@ -107,16 +120,3 @@ if query:
             st.write("No relevant information found.")
     else:
         st.write("Invalid query. Please ask a financial-related question.")
-
-# 5. Guard Rail Implementation
-def validate_query(query):
-    # Guardrail: Ensure query is finance-related and prevent harmful inputs
-    blacklist = ['hack', 'attack', 'delete', 'fraud']
-    keywords = ['revenue', 'profit', 'loss', 'earnings', 'income', 'expenses']
-    if any(b in query.lower() for b in blacklist):
-        return False
-    return any(kw in query.lower() for kw in keywords)
-
-# 6. Confidence Scoring
-def calculate_confidence(score):
-    return min(1.0, max(0.1, score / 10))  # Normalize confidence score

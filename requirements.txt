@@ -6,4 +6,4 @@ faiss-cpu
 rank-bm25
 scikit-learn
 sentence-transformers
-pip install chromadb
+chromadb

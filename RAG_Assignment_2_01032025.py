@@ -2,7 +2,6 @@ import os
 import faiss
 import torch
 import streamlit as st
-import chromadb
 import pandas as pd
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
@@ -34,12 +33,10 @@ all_chunks = [chunk for sublist in df['text_chunks'] for chunk in sublist]
 embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 embeddings = embedding_model.encode(all_chunks, convert_to_numpy=True)
 
-# Vector Database Setup (FAISS & ChromaDB)
+# Vector Database Setup (FAISS)
 vector_dim = embeddings.shape[1]
 index = faiss.IndexFlatL2(vector_dim)
 index.add(embeddings)
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
-collection = chroma_client.get_or_create_collection(name="financial_data")
 
 # ==========================
 # 3. Advanced RAG Implementation

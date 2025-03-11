@@ -104,7 +104,7 @@ def retrieve_documents(query):
     rerank_scores = reranker.predict([(query, text) for text in retrieved_texts])
     ranked_results = sorted(zip(combined_indices, rerank_scores), key=lambda x: x[1], reverse=True)
     
-    return [(chunks[i], score) for i, score in ranked_results]
+    return [(chunks[ranked_results[0][0]], ranked_results[0][1])] if ranked_results else []
 
 # 6. UI Development (e.g., Streamlit)
 st.title("Financial Q&A using Advanced RAG")
@@ -113,9 +113,9 @@ if query:
     if validate_query(query):
         results = retrieve_documents(query)
         if results:
-            st.write("### Top Answers")
-            for text, score in results:
-                st.write(f"{text}\n**Confidence Score:** {calculate_confidence(score):.2f}")
+            st.write("### Top Answer")
+            text, score = results[0]
+            st.write(f"{text}\n**Confidence Score:** {calculate_confidence(score):.2f}")
         else:
             st.write("No relevant information found.")
     else:

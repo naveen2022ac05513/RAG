@@ -124,10 +124,10 @@ def calculate_confidence(score):
 
 ## Test Queries
 ##test_queries = [
-    "Which company had the highest revenue in 2023?",  # High-confidence
-    "What will be next year's revenue?",  # Low-confidence
-    "What is the capital of France?"  # Irrelevant question
-]
+    #"Which company had the highest revenue in 2023?",  # High-confidence
+    #"What will be next year's revenue?",  # Low-confidence
+    #"What is the capital of France?"  # Irrelevant question
+#]
 
 for tq in test_queries:
     st.write(f"\n### Testing Query: {tq}")

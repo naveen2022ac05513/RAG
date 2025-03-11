@@ -1,9 +1,8 @@
-﻿pandas
-numpy
 streamlit
-sentence-transformers
 faiss-cpu
-rank-bm25
-scikit-learn
-sentence-transformers
+torch
 chromadb
+pandas
+sentence-transformers
+rank-bm25
+transformers

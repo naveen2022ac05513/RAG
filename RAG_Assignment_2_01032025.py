@@ -1,116 +1,110 @@
-import pandas as pd
-import numpy as np
-import streamlit as st
-from sentence_transformers import SentenceTransformer, CrossEncoder
-import faiss
-from rank_bm25 import BM25Okapi
-from sklearn.preprocessing import normalize
 import os
-import traceback
-import re
-from huggingface_hub import snapshot_download
+import faiss
+import torch
+import streamlit as st
+import chromadb
+import pandas as pd
+from sentence_transformers import SentenceTransformer, CrossEncoder
+from rank_bm25 import BM25Okapi
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# Install missing dependencies
-os.system("pip install --upgrade sentence-transformers pandas numpy streamlit faiss-cpu rank-bm25 scikit-learn huggingface_hub")
+# ==========================
+# 1. Data Collection & Preprocessing
+# ==========================
 
-# 1. Load & Preprocess Financial Data
-url = 'https://raw.githubusercontent.com/naveen2022ac05513/RAG/main/Financial%20Statements.csv'
-financial_data = pd.read_csv(url, on_bad_lines='skip')
-financial_data.fillna("None", inplace=True)
+# Load Dataset
+url = 'https://github.com/naveen2022ac05513/RAG/raw/main/Financial%20Statements.csv'
+df = pd.read_csv(url)
 
-# Ensure 'Year' column is numeric
-try:
-    financial_data['Year'] = pd.to_numeric(financial_data['Year'], errors='coerce')
-except KeyError:
-    st.error("Error: 'Year' column not found in dataset.")
-    st.stop()
+# Preprocess Data
+def chunk_text(text, max_tokens=100):
+    words = str(text).split()
+    return [' '.join(words[i:i + max_tokens]) for i in range(0, len(words), max_tokens)]
 
-# 2. Extract Year from Query
-def extract_year(query):
-    match = re.search(r'\b(20[0-2][0-9])\b', query)
-    return int(match.group(1)) if match else 2023  # Default year
+df['text_chunks'] = df.iloc[:, 1].apply(lambda x: chunk_text(x))  # Assuming relevant text is in the second column
 
-# 3. Retrieve Lowest Revenue Company
-def find_lowest_revenue_company(year):
-    relevant_data = financial_data[financial_data['Year'] == year]
-    if relevant_data.empty:
-        return None, None
-    try:
-        relevant_data['Revenue'] = pd.to_numeric(relevant_data['Revenue'], errors='coerce')
-        lowest_revenue_row = relevant_data.loc[relevant_data['Revenue'].idxmin()]
-        return lowest_revenue_row.to_string(), 1.0
-    except KeyError:
-        return None, None
+# Flatten chunks
+all_chunks = [chunk for sublist in df['text_chunks'] for chunk in sublist]
 
-# 4. Retrieve General Information using RAG
-def retrieve_documents(query):
-    year = extract_year(query)
+# ==========================
+# 2. Basic RAG Implementation
+# ==========================
 
-    # Special case: Lowest Revenue Company
-    if "lowest revenue" in query.lower() or "lowest earning" in query.lower():
-        return find_lowest_revenue_company(year)
+# Load Embedding Model
+embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+embeddings = embedding_model.encode(all_chunks, convert_to_numpy=True)
 
-    # Filter Data for the Year
-    relevant_data = financial_data[financial_data['Year'] == year]
-    if relevant_data.empty:
-        return None, None
-    financial_texts = relevant_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1).tolist()
+# Vector Database Setup (FAISS & ChromaDB)
+vector_dim = embeddings.shape[1]
+index = faiss.IndexFlatL2(vector_dim)
+index.add(embeddings)
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+collection = chroma_client.get_or_create_collection(name="financial_data")
 
-    # Chunk Texts
-    def chunk_text(text, chunk_size=300):
-        words = text.split()
-        return [' '.join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+# ==========================
+# 3. Advanced RAG Implementation
+# ==========================
 
-    chunks = [chunk for text in financial_texts for chunk in chunk_text(text)]
+# BM25 Setup
+tokenized_chunks = [chunk.split() for chunk in all_chunks]
+bm25 = BM25Okapi(tokenized_chunks)
 
-    # Load Embedding Model & FAISS Index
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    chunk_embeddings = embedding_model.encode(chunks, convert_to_numpy=True)
-    chunk_embeddings = normalize(chunk_embeddings, axis=1, norm='l2')
+# Load Cross-Encoder for Re-Ranking
+cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+
+# ==========================
+# 4. UI Development (Streamlit)
+# ==========================
+
+def hybrid_search(query, top_k=5):
+    """Perform BM25 + Vector Retrieval + Re-Ranking"""
+    query_embedding = embedding_model.encode([query], convert_to_numpy=True)[0]
     
-    faiss_index = faiss.IndexFlatL2(chunk_embeddings.shape[1])
-    faiss_index.add(chunk_embeddings)
+    # Vector Search
+    D, I = index.search(query_embedding.reshape(1, -1), top_k)
+    vector_results = [all_chunks[idx] for idx in I[0] if idx < len(all_chunks)]
+    
+    # BM25 Search
+    bm25_results = bm25.get_top_n(query.lower().split(), all_chunks, n=top_k)
+    
+    # Merge Results
+    combined_results = list(set(vector_results + bm25_results))
+    
+    # Re-Rank using Cross-Encoder
+    scores = cross_encoder.predict([(query, doc) for doc in combined_results])
+    ranked_results = [doc for _, doc in sorted(zip(scores, combined_results), reverse=True)]
+    
+    return ranked_results[:top_k]
 
-    # BM25 Indexing
-    tokenized_corpus = [text.split() for text in chunks]
-    bm25 = BM25Okapi(tokenized_corpus)
+# ==========================
+# 5. Guardrail Implementation
+# ==========================
 
-    # Encode Query
-    query_embedding = embedding_model.encode([query], convert_to_numpy=True)
-    query_embedding = normalize(query_embedding, axis=1, norm='l2')
+# Load Small Language Model (SLM) for Response Generation
+slm_model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+tokenizer = AutoTokenizer.from_pretrained(slm_model_name)
+slm_model = AutoModelForCausalLM.from_pretrained(slm_model_name)
 
-    # BM25 & FAISS Retrieval
-    bm25_scores = bm25.get_scores(query.split())
-    bm25_top_k = np.argsort(bm25_scores)[-5:][::-1]
-    _, faiss_top_k = faiss_index.search(query_embedding, 5)
-    faiss_top_k = faiss_top_k.flatten()
+def generate_response(query, context):
+    """Generate a response using the small language model"""
+    input_text = f"Context: {context}\nQuestion: {query}\nAnswer:"
+    inputs = tokenizer(input_text, return_tensors="pt")
+    output = slm_model.generate(**inputs, max_length=150)
+    return tokenizer.decode(output[0], skip_special_tokens=True)
 
-    # Combine & Re-rank
-    combined_indices = list(set(bm25_top_k) | set(faiss_top_k))
-    retrieved_texts = [chunks[i] for i in combined_indices]
+def apply_guardrail(response, retrieved_docs):
+    """Ensure response aligns with retrieved context"""
+    return response if any(doc in response for doc in retrieved_docs) else "I'm not confident in my answer."
 
-    if not retrieved_texts:
-        return None, None  # No relevant results
+# ==========================
+# 6. Testing & Validation (Streamlit UI)
+# ==========================
 
-    # Load Cross-Encoder for Re-Ranking
-    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-    rerank_scores = reranker.predict([(query, text) for text in retrieved_texts])
-    ranked_results = sorted(zip(retrieved_texts, rerank_scores), key=lambda x: x[1], reverse=True)
-
-    return ranked_results[0] if ranked_results else (None, None)
-
-# 5. Normalize Confidence Score
-def calculate_confidence(score):
-    return min(1.0, max(0.1, score / 10))
-
-# 6. Streamlit UI
-st.title("Financial Q&A using Advanced RAG")
-query = st.text_input("Enter your financial question:")
-
-if query:
-    best_text, best_score = retrieve_documents(query)
-    if best_text:
-        st.write(f"### Answer from {extract_year(query)} Financial Data")
-        st.write(f"{best_text}\n\n**Confidence Score:** {calculate_confidence(best_score):.2f}")
-    else:
-        st.write(f"No relevant information found for the year {extract_year(query)}.")
+st.title("Financial Q&A with RAG & Re-Ranking")
+user_query = st.text_input("Enter your financial question:")
+if user_query:
+    retrieved_docs = hybrid_search(user_query)
+    raw_response = generate_response(user_query, ' '.join(retrieved_docs))
+    final_response = apply_guardrail(raw_response, retrieved_docs)
+    st.write("### Answer:", final_response)
+    st.write("### Retrieved Documents:", retrieved_docs)

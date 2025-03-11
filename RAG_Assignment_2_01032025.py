@@ -117,26 +117,6 @@ def validate_query(query):
         return False
     return any(kw in query.lower() for kw in keywords)
 
-# 6. Testing & Validation
-## Confidence Scoring
+# 6. Confidence Scoring
 def calculate_confidence(score):
     return min(1.0, max(0.1, score / 10))  # Normalize confidence score
-
-## Test Queries
-##test_queries = [
-    #"Which company had the highest revenue in 2023?",  # High-confidence
-    #"What will be next year's revenue?",  # Low-confidence
-    #"What is the capital of France?"  # Irrelevant question
-#]
-
-for tq in test_queries:
-    st.write(f"\n### Testing Query: {tq}")
-    if validate_query(tq):
-        results = retrieve_documents(tq)
-        if results:
-            for text, score in results:
-                st.write(f"{text}\n**Confidence Score:** {calculate_confidence(score):.2f}")
-        else:
-            st.write("No relevant information found.")
-    else:
-        st.write("Invalid query.")

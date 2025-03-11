@@ -1,9 +1,7 @@
-streamlit
-faiss-cpu
 torch
-chromadb
+faiss-cpu
+streamlit
 pandas
 sentence-transformers
 rank-bm25
 transformers
-duckdb

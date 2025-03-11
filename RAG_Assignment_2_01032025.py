@@ -13,10 +13,9 @@ from huggingface_hub import snapshot_download
 # Install missing dependencies
 os.system("pip install --upgrade sentence-transformers pandas numpy streamlit faiss-cpu rank-bm25 scikit-learn huggingface_hub")
 
-# 1. Data Collection & Preprocessing
+# 1. Load & Preprocess Financial Data
 url = 'https://raw.githubusercontent.com/naveen2022ac05513/RAG/main/Financial%20Statements.csv'
 financial_data = pd.read_csv(url, on_bad_lines='skip')
-
 financial_data.fillna("None", inplace=True)
 
 # Ensure 'Year' column is numeric
@@ -28,97 +27,83 @@ except KeyError:
 
 # 2. Extract Year from Query
 def extract_year(query):
-    """Extracts a four-digit year from the query, defaulting to 2023 if none is found."""
-    match = re.search(r'\b(20[0-2][0-9])\b', query)  # Matches years 2000-2029
-    if match:
-        return int(match.group(1))
-    return 2023  # Default to the latest available data
+    match = re.search(r'\b(20[0-2][0-9])\b', query)
+    return int(match.group(1)) if match else 2023  # Default year
 
-# 3. Get Data for the Specified Year
-def get_relevant_data(year):
-    """Filters financial data for the specified year."""
+# 3. Retrieve Lowest Revenue Company
+def find_lowest_revenue_company(year):
     relevant_data = financial_data[financial_data['Year'] == year]
     if relevant_data.empty:
-        return None  # No data for the requested year
-    return relevant_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1).tolist()
+        return None, None
+    try:
+        relevant_data['Revenue'] = pd.to_numeric(relevant_data['Revenue'], errors='coerce')
+        lowest_revenue_row = relevant_data.loc[relevant_data['Revenue'].idxmin()]
+        return lowest_revenue_row.to_string(), 1.0
+    except KeyError:
+        return None, None
 
-# 4. Chunking Financial Documents
-def chunk_text(text, chunk_size=300):
-    words = text.split()
-    return [' '.join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
-
-# 5. Load Embedding Model & FAISS Index
-try:
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-except Exception as e:
-    st.error(f"Error loading embedding model: {e}")
-    st.text(traceback.format_exc())
-
-# 6. Load Cross-Encoder for Re-Ranking
-try:
-    reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    reranker = CrossEncoder(reranker_model)
-except Exception as e:
-    st.error(f"Error loading cross-encoder model: {e}")
-    st.text(traceback.format_exc())
-
-# 7. Hybrid Retrieval (BM25 + FAISS) with Re-Ranking
+# 4. Retrieve General Information using RAG
 def retrieve_documents(query):
-    """Retrieve the best-matching document for the specified year."""
-    year = extract_year(query)  # Extract year from query
-    filtered_texts = get_relevant_data(year)  # Get data only for that year
+    year = extract_year(query)
 
-    if not filtered_texts:
-        return None, None  # No relevant data found for the year
+    # Special case: Lowest Revenue Company
+    if "lowest revenue" in query.lower() or "lowest earning" in query.lower():
+        return find_lowest_revenue_company(year)
 
-    # Chunk the filtered texts
-    filtered_chunks = []
-    for text in filtered_texts:
-        filtered_chunks.extend(chunk_text(text))
+    # Filter Data for the Year
+    relevant_data = financial_data[financial_data['Year'] == year]
+    if relevant_data.empty:
+        return None, None
+    financial_texts = relevant_data.apply(lambda row: ' '.join(row.values.astype(str)), axis=1).tolist()
 
-    # Encode the chunks
-    chunk_embeddings = embedding_model.encode(filtered_chunks, convert_to_numpy=True)
+    # Chunk Texts
+    def chunk_text(text, chunk_size=300):
+        words = text.split()
+        return [' '.join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+
+    chunks = [chunk for text in financial_texts for chunk in chunk_text(text)]
+
+    # Load Embedding Model & FAISS Index
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    chunk_embeddings = embedding_model.encode(chunks, convert_to_numpy=True)
     chunk_embeddings = normalize(chunk_embeddings, axis=1, norm='l2')
-
-    # Create FAISS index for the filtered data
+    
     faiss_index = faiss.IndexFlatL2(chunk_embeddings.shape[1])
     faiss_index.add(chunk_embeddings)
 
-    # BM25 Indexing for filtered chunks
-    tokenized_filtered_corpus = [text.split() for text in filtered_chunks]
-    bm25_filtered = BM25Okapi(tokenized_filtered_corpus)
+    # BM25 Indexing
+    tokenized_corpus = [text.split() for text in chunks]
+    bm25 = BM25Okapi(tokenized_corpus)
 
-    # Encode query
+    # Encode Query
     query_embedding = embedding_model.encode([query], convert_to_numpy=True)
     query_embedding = normalize(query_embedding, axis=1, norm='l2')
 
-    # BM25 Retrieval
-    bm25_scores = bm25_filtered.get_scores(query.split())
+    # BM25 & FAISS Retrieval
+    bm25_scores = bm25.get_scores(query.split())
     bm25_top_k = np.argsort(bm25_scores)[-5:][::-1]
-
-    # FAISS Retrieval
     _, faiss_top_k = faiss_index.search(query_embedding, 5)
     faiss_top_k = faiss_top_k.flatten()
 
-    # Combine results
+    # Combine & Re-rank
     combined_indices = list(set(bm25_top_k) | set(faiss_top_k))
-    retrieved_texts = [filtered_chunks[i] for i in combined_indices]
+    retrieved_texts = [chunks[i] for i in combined_indices]
 
     if not retrieved_texts:
-        return None, None  # No results found for the year
+        return None, None  # No relevant results
 
-    # Re-rank with Cross-Encoder
+    # Load Cross-Encoder for Re-Ranking
+    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     rerank_scores = reranker.predict([(query, text) for text in retrieved_texts])
     ranked_results = sorted(zip(retrieved_texts, rerank_scores), key=lambda x: x[1], reverse=True)
 
-    return ranked_results[0]  # Return the best-ranked result
+    return ranked_results[0] if ranked_results else (None, None)
 
-# 8. Confidence Scoring
+# 5. Normalize Confidence Score
 def calculate_confidence(score):
-    """Normalize confidence score between 0.1 and 1.0"""
     return min(1.0, max(0.1, score / 10))
 
-# 9. Streamlit UI Development
+# 6. Streamlit UI
 st.title("Financial Q&A using Advanced RAG")
 query = st.text_input("Enter your financial question:")
 

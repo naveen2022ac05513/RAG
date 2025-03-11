@@ -6,3 +6,4 @@ pandas
 sentence-transformers
 rank-bm25
 transformers
+duckdb

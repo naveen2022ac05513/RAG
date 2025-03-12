@@ -79,12 +79,21 @@ def hybrid_search(query, top_k=5):
 
 # Load Small Language Model (SLM) for Response Generation
 slm_model_name = "mistralai/Mistral-7B-Instruct-v0.1"
-tokenizer = AutoTokenizer.from_pretrained(slm_model_name)
-slm_model = AutoModelForCausalLM.from_pretrained(
-    slm_model_name, torch_dtype=torch.float16, device_map="auto"")
+
+try:
+    tokenizer = AutoTokenizer.from_pretrained(slm_model_name)
+    slm_model = AutoModelForCausalLM.from_pretrained(
+        slm_model_name, torch_dtype=torch.float16, device_map="auto"
+    )
+except Exception as e:
+    st.error("Error loading the language model. Ensure model is accessible.")
+    slm_model, tokenizer = None, None
 
 def generate_response(query, context):
     """Generate a response using the small language model"""
+    if not slm_model:
+        return "Error: Model not loaded properly."
+
     input_text = f"Context: {context}\nQuestion: {query}\nAnswer:"
     inputs = tokenizer(input_text, return_tensors="pt")
     output = slm_model.generate(**inputs, max_length=150)

@@ -86,7 +86,7 @@ try:
         slm_model_name, torch_dtype=torch.float16, device_map="auto"
     )
 except Exception as e:
-    st.error("Error loading the language model. Ensure model is accessible.")
+    st.error(f"Error loading the language model: {e}")
     slm_model, tokenizer = None, None
 
 def generate_response(query, context):

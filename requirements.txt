@@ -1,9 +1,7 @@
 torch
-faiss-cpu
-streamlit
-pandas
-sentence-transformers
-rank-bm25
 transformers
-accelerate
-bitsandbytes
+sentence-transformers
+faiss-cpu
+rank-bm25
+streamlit
+

@@ -77,10 +77,10 @@ def hybrid_search(query, top_k=5):
 # 5. Guardrail Implementation
 # ==========================
 
-# Load Small Language Model (SLM) for Response Generation
-slm_model_name = "mistralai/Mistral-7B-Instruct-v0.1"
-tokenizer = AutoTokenizer.from_pretrained(slm_model_name)
-slm_model = AutoModelForCausalLM.from_pretrained(slm_model_name)
+# ✅ **Use a smaller, efficient SLM**
+slm_model_name = "mistralai/Mistral-7B-Instruct-v0.1"  # Replace with a smaller model if needed
+tokenizer = AutoTokenizer.from_pretrained(slm_model_name, use_fast=True)
+slm_model = AutoModelForCausalLM.from_pretrained(slm_model_name, torch_dtype=torch.float16, device_map="auto")
 
 def generate_response(query, context):
     """Generate a response using the small language model"""

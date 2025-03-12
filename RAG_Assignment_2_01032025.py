@@ -79,10 +79,15 @@ def hybrid_search(query, top_k=5):
 
 # Load Small Language Model (SLM) for Response Generation
 slm_model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-tokenizer = AutoTokenizer.from_pretrained(slm_model_name)
-slm_model = AutoModelForCausalLM.from_pretrained(
-    slm_model_name, torch_dtype=torch.float16, device_map="auto"
-)
+
+try:
+    tokenizer = AutoTokenizer.from_pretrained(slm_model_name)
+    slm_model = AutoModelForCausalLM.from_pretrained(
+        slm_model_name, torch_dtype=torch.float32, device_map="cpu"
+    )
+except Exception as e:
+    st.error(f"Error loading the language model: {str(e)}")
+    st.stop()
 
 def generate_response(query, context):
     """Generate a response using the small language model"""

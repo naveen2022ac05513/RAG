@@ -77,7 +77,7 @@ def rerank(query, results):
     pairs = [(query, doc[0]) for doc in results]
     scores = reranker.predict(pairs)
     ranked_results = sorted(zip(scores, results), reverse=True)
-    return ranked_results[0][1][0], max(0, ranked_results[0][0])
+    return ranked_results[0][1][0], max(0, min(ranked_results[0][0], 1))
 
 # Component 4: Small Language Model Integration
 def generate_response(sl_model, tokenizer, query, retrieved_text):

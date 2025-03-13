@@ -1,146 +1,112 @@
-import os
-import faiss
-import torch
-import streamlit as st
 import pandas as pd
-from sentence_transformers import SentenceTransformer, CrossEncoder
+import numpy as np
+import faiss
 from rank_bm25 import BM25Okapi
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from sentence_transformers import SentenceTransformer, CrossEncoder
+import streamlit as st
 
-# ==========================
-# 1. Data Collection & Preprocessing
-# ==========================
+"""
+### Component 1: Data Collection & Preprocessing
+- Load financial dataset (last two years of company financials).
+- Clean and structure data for retrieval.
+"""
 
-st.title("Financial Q&A with RAG & Re-Ranking")
+def load_data(file_path):
+    df = pd.read_csv(file_path)
+    df.columns = df.columns.str.strip()  # Fix column names
+    df[['Revenue', 'Net Income', 'EBITDA']] /= 1e3  # Convert to billions
+    return df
 
-# Load Dataset
-url = 'https://github.com/naveen2022ac05513/RAG/raw/main/Financial%20Statements.csv'
+"""
+### Component 2: Basic RAG Implementation
+- Convert financial documents into text chunks.
+- Embed using a pre-trained model.
+- Store and retrieve using a basic vector database (FAISS).
+"""
 
-try:
-    df = pd.read_csv(url)
-    st.write("### Dataset Loaded Successfully")
-    st.write(df.head())  # Show sample data
-except Exception as e:
-    st.error(f"Error loading dataset: {e}")
-    st.stop()
+def generate_text_chunks(df):
+    chunks = [
+        f"In {row['Year']}, {row['Company']} ({row['Category']}) had a revenue of ${row['Revenue']}B, "
+        f"a net income of ${row['Net Income']}B, and an EBITDA of ${row['EBITDA']}B. "
+        f"The debt-to-equity ratio was {row['Debt/Equity Ratio']}, with an ROE of {row['ROE']}%. "
+        f"The company had {row['Number of Employees']} employees."
+        for _, row in df.iterrows()
+    ]
+    return chunks
 
-# Preprocess Data
-def chunk_text(text, max_tokens=100):
-    """Splits text into chunks of `max_tokens` words each"""
-    words = str(text).split()
-    return [' '.join(words[i:i + max_tokens]) for i in range(0, len(words), max_tokens)]
+# Embed text chunks and store in FAISS
+def create_vector_store(chunks):
+    embed_model = SentenceTransformer('BAAI/bge-small-en')
+    embeddings = embed_model.encode(chunks)
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(np.array(embeddings))
+    return index, chunks, embed_model
 
-df['text_chunks'] = df.iloc[:, 1].apply(lambda x: chunk_text(x))  # Assuming relevant text is in the second column
+"""
+### Component 3: Advanced RAG Implementation
+- Improve retrieval by combining BM25 keyword-based search with vector embeddings.
+- Experiment with chunk sizes and retrieval methods.
+- Implement re-ranking using a cross-encoder.
+"""
 
-# Flatten chunks
-all_chunks = [chunk for sublist in df['text_chunks'] for chunk in sublist]
+def create_bm25(chunks):
+    tokenized_corpus = [chunk.split() for chunk in chunks]
+    bm25 = BM25Okapi(tokenized_corpus)
+    return bm25, tokenized_corpus
 
-# ==========================
-# 2. Basic RAG Implementation
-# ==========================
-
-# Load Embedding Model
-try:
-    embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-except Exception as e:
-    st.error(f"Error loading embedding model: {e}")
-    st.stop()
-
-# Generate embeddings
-embeddings = embedding_model.encode(all_chunks, convert_to_numpy=True)
-if embeddings.shape[0] == 0:
-    st.error("Embeddings could not be generated. Check input data.")
-    st.stop()
-
-# Vector Database Setup (FAISS)
-vector_dim = embeddings.shape[1]
-index = faiss.IndexFlatL2(vector_dim)
-index.add(embeddings)
-
-# ==========================
-# 3. Advanced RAG Implementation
-# ==========================
-
-# BM25 Setup
-tokenized_chunks = [chunk.split() for chunk in all_chunks]
-bm25 = BM25Okapi(tokenized_chunks)
-
-# Load Cross-Encoder for Re-Ranking
-try:
-    cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-except Exception as e:
-    st.error(f"Error loading cross-encoder model: {e}")
-    st.stop()
-
-# ==========================
-# 4. UI Development (Streamlit)
-# ==========================
-
-def hybrid_search(query, top_k=5):
-    """Perform BM25 + Vector Retrieval + Re-Ranking"""
-    query_embedding = embedding_model.encode([query], convert_to_numpy=True)[0]
+# Query Processing & Retrieval
+def retrieve(query, index, chunks, bm25, bm25_corpus, embed_model):
+    query_embedding = embed_model.encode([query])
+    _, faiss_indices = index.search(query_embedding, 5)
+    faiss_results = [chunks[i] for i in faiss_indices[0]]
     
-    # Vector Search
-    D, I = index.search(query_embedding.reshape(1, -1), top_k)
-    vector_results = [all_chunks[idx] for idx in I[0] if idx < len(all_chunks)]
+    bm25_scores = bm25.get_scores(query.split())
+    bm25_indices = np.argsort(bm25_scores)[-5:][::-1]
+    bm25_results = [chunks[i] for i in bm25_indices]
     
-    # BM25 Search
-    bm25_results = bm25.get_top_n(query.lower().split(), all_chunks, n=top_k)
+    combined_results = list(set(faiss_results + bm25_results))
+    return combined_results[:5]
+
+# Re-ranking with Cross-Encoder
+def rerank(query, results):
+    reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+    pairs = [(query, doc) for doc in results]
+    scores = reranker.predict(pairs)
+    ranked_results = [doc for _, doc in sorted(zip(scores, results), reverse=True)]
+    return ranked_results[0]
+
+"""
+### Component 4: UI Development
+- Build an interactive Streamlit UI.
+- Accept user queries and display the best-ranked financial response.
+"""
+
+def main():
+    st.title("Financial RAG Chatbot")
+    file_path = "Financial_Statements.csv"
+    df = load_data(file_path)
+    chunks = generate_text_chunks(df)
+    index, chunks, embed_model = create_vector_store(chunks)
+    bm25, bm25_corpus = create_bm25(chunks)
     
-    # Merge Results
-    combined_results = list(set(vector_results + bm25_results))
-    
-    if not combined_results:
-        return []
-
-    # Re-Rank using Cross-Encoder
-    scores = cross_encoder.predict([(query, doc) for doc in combined_results])
-    ranked_results = [doc for _, doc in sorted(zip(scores, combined_results), reverse=True)]
-    
-    return ranked_results[:top_k]
-
-# ==========================
-# 5. Guardrail Implementation
-# ==========================
-
-# Load Small Language Model (SLM) for Response Generation
-slm_model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-
-try:
-    tokenizer = AutoTokenizer.from_pretrained(slm_model_name)
-    slm_model = AutoModelForCausalLM.from_pretrained(
-        slm_model_name, torch_dtype=torch.float32, device_map="cpu"
-    )
-except Exception as e:
-    st.error(f"Error loading the language model: {e}")
-    st.stop()
-
-def generate_response(query, context):
-    """Generate a response using the small language model"""
-    input_text = f"Context: {context}\nQuestion: {query}\nAnswer:"
-    inputs = tokenizer(input_text, return_tensors="pt")
-    output = slm_model.generate(**inputs, max_length=150)
-    return tokenizer.decode(output[0], skip_special_tokens=True)
-
-def apply_guardrail(response, retrieved_docs):
-    """Ensure response aligns with retrieved context"""
-    return response if any(doc in response for doc in retrieved_docs) else "I'm not confident in my answer."
-
-# ==========================
-# 6. Testing & Validation (Streamlit UI)
-# ==========================
-
-user_query = st.text_input("Enter your financial question:")
-
-if user_query:
-    st.write("### Searching for relevant information...")
-    retrieved_docs = hybrid_search(user_query)
-
-    if not retrieved_docs:
-        st.write("No relevant information found.")
-    else:
-        raw_response = generate_response(user_query, ' '.join(retrieved_docs))
-        final_response = apply_guardrail(raw_response, retrieved_docs)
+    query = st.text_input("Enter your financial question:")
+    if st.button("Ask"):
+        results = retrieve(query, index, chunks, bm25, bm25_corpus, embed_model)
+        best_answer = rerank(query, results)
         
-        st.write("### Answer:", final_response)
-        st.write("### Retrieved Documents:", retrieved_docs)
+        """
+        ### Component 5: Guardrail Implementation
+        - Output-side filtering: Ensure responses are financial-related and non-misleading.
+        """
+        if "revenue" in best_answer.lower() or "net income" in best_answer.lower():
+            st.write(f"**Answer:** {best_answer}")
+        else:
+            st.write("**Response:** This question might be out of scope for financial data.")
+
+        """
+        ### Component 6: Testing & Validation
+        - Test cases: High-confidence, low-confidence, and irrelevant questions.
+        """
+        
+if __name__ == "__main__":
+    main()

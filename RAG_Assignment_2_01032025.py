@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import faiss
+import requests
+from io import StringIO
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer, CrossEncoder
 import streamlit as st
@@ -11,11 +13,18 @@ import streamlit as st
 - Clean and structure data for retrieval.
 """
 
-def load_data(file_path):
-    df = pd.read_csv(file_path)
-    df.columns = df.columns.str.strip()  # Fix column names
-    df[['Revenue', 'Net Income', 'EBITDA']] /= 1e3  # Convert to billions
-    return df
+def download_data():
+    url = "https://raw.githubusercontent.com/naveen2022ac05513/RAG/main/Financial%20Statements.csv"
+    response = requests.get(url)
+    if response.status_code == 200:
+        csv_data = StringIO(response.text)
+        df = pd.read_csv(csv_data)
+        df.columns = df.columns.str.strip()  # Fix column names
+        df[['Revenue', 'Net Income', 'EBITDA']] /= 1e3  # Convert to billions
+        return df
+    else:
+        st.error("Failed to download dataset from GitHub.")
+        return None
 
 """
 ### Component 2: Basic RAG Implementation
@@ -83,8 +92,9 @@ def rerank(query, results):
 
 def main():
     st.title("Financial RAG Chatbot")
-    file_path = "Financial_Statements.csv"
-    df = load_data(file_path)
+    df = download_data()
+    if df is None:
+        return
     chunks = generate_text_chunks(df)
     index, chunks, embed_model = create_vector_store(chunks)
     bm25, bm25_corpus = create_bm25(chunks)

@@ -63,7 +63,12 @@ def retrieve(query, index, chunks, bm25, bm25_corpus, embed_model, df):
     for year in range(2009, 2024):
         if str(year) in query:
             df_year = df[df['Year'] == year]
-            if not df_year.empty:
+            if "lowest revenue" in query.lower():
+                lowest_revenue_company = df_year.loc[df_year['Revenue'].idxmin()]
+                best_answer = (f"In {year}, {lowest_revenue_company['Company']} had the lowest revenue of "
+                               f"${lowest_revenue_company['Revenue']}B.")
+                return [(best_answer, 1.0)]
+            elif "highest revenue" in query.lower():
                 highest_revenue_company = df_year.loc[df_year['Revenue'].idxmax()]
                 best_answer = (f"In {year}, {highest_revenue_company['Company']} had the highest revenue of "
                                f"${highest_revenue_company['Revenue']}B.")

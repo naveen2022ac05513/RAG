@@ -69,6 +69,9 @@ def retrieve(query, index, chunks, bm25, bm25_corpus, embed_model, df):
                                f"${highest_revenue_company['Revenue']}B.")
                 return [(best_answer, 1.0)]
     
+    if not combined_results:
+        return [("This question is out of scope for financial data.", 0.0)]
+    
     return sorted(combined_results, key=lambda x: x[1], reverse=True)[:5]
 
 # Implementing Re-Ranking with Cross-Encoders
@@ -110,12 +113,12 @@ def main():
         best_answer, confidence_score = rerank(query, results)
         response = generate_response(slm, tokenizer, query, best_answer)
         
-        if "revenue" in best_answer.lower() or "net income" in best_answer.lower():
+        if confidence_score > 0.1:
             st.write(f"**Answer:** {response}")
             st.write(f"**Confidence Score:** {confidence_score:.2f}")
         else:
-            st.write("**Response:** This question might be out of scope for financial data.")
-            st.write(f"**Confidence Score:** {confidence_score:.2f}")
+            st.write("**Response:** This question is out of scope for financial data.")
+            st.write("**Confidence Score:** 0.00")
         
 if __name__ == "__main__":
     main()

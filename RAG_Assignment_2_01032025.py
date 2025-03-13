@@ -50,25 +50,25 @@ def create_bm25(chunks):
 def retrieve(query, index, chunks, bm25, bm25_corpus, embed_model):
     # Retrieve using FAISS
     query_embedding = embed_model.encode([query])
-    _, faiss_indices = index.search(query_embedding, 5)
-    faiss_results = [chunks[i] for i in faiss_indices[0]]
+    faiss_distances, faiss_indices = index.search(query_embedding, 5)
+    faiss_results = [(chunks[i], 1 / (1 + faiss_distances[0][j])) for j, i in enumerate(faiss_indices[0])]
     
     # Retrieve using BM25
     bm25_scores = bm25.get_scores(query.split())
     bm25_indices = np.argsort(bm25_scores)[-5:][::-1]
-    bm25_results = [chunks[i] for i in bm25_indices]
+    bm25_results = [(chunks[i], bm25_scores[i]) for i in bm25_indices]
     
-    # Combine and return results
+    # Combine and return results with confidence scores
     combined_results = list(set(faiss_results + bm25_results))
-    return combined_results[:5]
+    return sorted(combined_results, key=lambda x: x[1], reverse=True)[:5]
 
 # Implementing Re-Ranking with Cross-Encoders
 def rerank(query, results):
     reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-    pairs = [(query, doc) for doc in results]
+    pairs = [(query, doc[0]) for doc in results]
     scores = reranker.predict(pairs)
-    ranked_results = [doc for _, doc in sorted(zip(scores, results), reverse=True)]
-    return ranked_results[0]
+    ranked_results = sorted(zip(scores, results), reverse=True)
+    return ranked_results[0][1][0], ranked_results[0][0]  # Returning best answer and confidence score
 
 # Component 4: UI Development (Streamlit App)
 def main():
@@ -83,13 +83,15 @@ def main():
     query = st.text_input("Enter your financial question:")
     if st.button("Ask"):
         results = retrieve(query, index, chunks, bm25, bm25_corpus, embed_model)
-        best_answer = rerank(query, results)
+        best_answer, confidence_score = rerank(query, results)
         
         # Component 5: Guard Rail Implementation (Output Filtering)
         if "revenue" in best_answer.lower() or "net income" in best_answer.lower():
             st.write(f"**Answer:** {best_answer}")
+            st.write(f"**Confidence Score:** {confidence_score:.2f}")
         else:
             st.write("**Response:** This question might be out of scope for financial data.")
+            st.write(f"**Confidence Score:** {confidence_score:.2f}")
         
 if __name__ == "__main__":
     main()

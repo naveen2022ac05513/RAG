@@ -11,12 +11,22 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # 1. Data Collection & Preprocessing
 # ==========================
 
+st.title("Financial Q&A with RAG & Re-Ranking")
+
 # Load Dataset
 url = 'https://github.com/naveen2022ac05513/RAG/raw/main/Financial%20Statements.csv'
-df = pd.read_csv(url)
+
+try:
+    df = pd.read_csv(url)
+    st.write("### Dataset Loaded Successfully")
+    st.write(df.head())  # Show sample data
+except Exception as e:
+    st.error(f"Error loading dataset: {e}")
+    st.stop()
 
 # Preprocess Data
 def chunk_text(text, max_tokens=100):
+    """Splits text into chunks of `max_tokens` words each"""
     words = str(text).split()
     return [' '.join(words[i:i + max_tokens]) for i in range(0, len(words), max_tokens)]
 
@@ -30,8 +40,17 @@ all_chunks = [chunk for sublist in df['text_chunks'] for chunk in sublist]
 # ==========================
 
 # Load Embedding Model
-embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+try:
+    embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+except Exception as e:
+    st.error(f"Error loading embedding model: {e}")
+    st.stop()
+
+# Generate embeddings
 embeddings = embedding_model.encode(all_chunks, convert_to_numpy=True)
+if embeddings.shape[0] == 0:
+    st.error("Embeddings could not be generated. Check input data.")
+    st.stop()
 
 # Vector Database Setup (FAISS)
 vector_dim = embeddings.shape[1]
@@ -47,7 +66,11 @@ tokenized_chunks = [chunk.split() for chunk in all_chunks]
 bm25 = BM25Okapi(tokenized_chunks)
 
 # Load Cross-Encoder for Re-Ranking
-cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+try:
+    cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+except Exception as e:
+    st.error(f"Error loading cross-encoder model: {e}")
+    st.stop()
 
 # ==========================
 # 4. UI Development (Streamlit)
@@ -67,6 +90,9 @@ def hybrid_search(query, top_k=5):
     # Merge Results
     combined_results = list(set(vector_results + bm25_results))
     
+    if not combined_results:
+        return []
+
     # Re-Rank using Cross-Encoder
     scores = cross_encoder.predict([(query, doc) for doc in combined_results])
     ranked_results = [doc for _, doc in sorted(zip(scores, combined_results), reverse=True)]
@@ -86,7 +112,7 @@ try:
         slm_model_name, torch_dtype=torch.float32, device_map="cpu"
     )
 except Exception as e:
-    st.error(f"Error loading the language model: {str(e)}")
+    st.error(f"Error loading the language model: {e}")
     st.stop()
 
 def generate_response(query, context):
@@ -104,11 +130,17 @@ def apply_guardrail(response, retrieved_docs):
 # 6. Testing & Validation (Streamlit UI)
 # ==========================
 
-st.title("Financial Q&A with RAG & Re-Ranking")
 user_query = st.text_input("Enter your financial question:")
+
 if user_query:
+    st.write("### Searching for relevant information...")
     retrieved_docs = hybrid_search(user_query)
-    raw_response = generate_response(user_query, ' '.join(retrieved_docs))
-    final_response = apply_guardrail(raw_response, retrieved_docs)
-    st.write("### Answer:", final_response)
-    st.write("### Retrieved Documents:", retrieved_docs)
+
+    if not retrieved_docs:
+        st.write("No relevant information found.")
+    else:
+        raw_response = generate_response(user_query, ' '.join(retrieved_docs))
+        final_response = apply_guardrail(raw_response, retrieved_docs)
+        
+        st.write("### Answer:", final_response)
+        st.write("### Retrieved Documents:", retrieved_docs)

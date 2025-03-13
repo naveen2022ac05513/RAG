@@ -96,7 +96,7 @@ def generate_response(sl_model, tokenizer, query, retrieved_text):
 
 # Load Small Language Model
 def load_slm():
-    model_name = "distilgpt2"  # Replaced microsoft/phi-2 with distilgpt2 for better performance on Codespaces
+    model_name = "distilgpt2"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name)
     return model, tokenizer
